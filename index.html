@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PDF Viewer Widget</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #111;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#toolbar {
+    padding: 10px;
+    background: #1e1e1e;
+}
+
+#viewer {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+canvas {
+    margin: 10px 0;
+    background: white;
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+    <input type="file" id="fileInput" accept="application/pdf">
+</div>
+
+<div id="viewer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script>
+const input = document.getElementById('fileInput');
+const viewer = document.getElementById('viewer');
+
+input.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    viewer.innerHTML = ""; // clear old pdf
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    // loop through ALL pages
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+
+        const viewport = page.getViewport({ scale: 1.5 });
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        viewer.appendChild(canvas);
+
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+    }
+});
+</script>
+
+</body>
+</html>
