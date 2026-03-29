@@ -2,42 +2,85 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>PDF Viewer Widget</title>
+<title>PDF Widget</title>
 
 <style>
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
-    font-family: sans-serif;
-    background: #111;
-    color: white;
+    font-family: Inter, sans-serif;
+    background: #0f0f0f;
+    color: #fff;
     display: flex;
     flex-direction: column;
     height: 100vh;
 }
 
+/* top bar */
 #toolbar {
-    padding: 10px;
-    background: #1e1e1e;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    background: rgba(20,20,20,0.9);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #222;
 }
 
+input[type="file"] {
+    color: white;
+}
+
+#info {
+    margin-left: auto;
+    opacity: 0.7;
+}
+
+/* viewer */
 #viewer {
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding: 20px;
+}
+
+/* page */
+.page {
+    background: white;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    overflow: hidden;
+    max-width: 100%;
 }
 
 canvas {
-    margin: 10px 0;
-    background: white;
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* zoom slider */
+#zoom {
+    width: 120px;
 }
 </style>
 </head>
+
 <body>
 
 <div id="toolbar">
     <input type="file" id="fileInput" accept="application/pdf">
+
+    <label>zoom</label>
+    <input type="range" id="zoom" min="0.5" max="2" step="0.1" value="1">
+
+    <div id="info">no pdf loaded</div>
 </div>
 
 <div id="viewer"></div>
@@ -47,21 +90,41 @@ canvas {
 <script>
 const input = document.getElementById('fileInput');
 const viewer = document.getElementById('viewer');
+const info = document.getElementById('info');
+const zoomSlider = document.getElementById('zoom');
+
+let pdfDoc = null;
+let scale = 1;
 
 input.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    viewer.innerHTML = ""; // clear old pdf
+    viewer.innerHTML = "loading...";
+    const buffer = await file.arrayBuffer();
 
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
 
-    // loop through ALL pages
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
+    info.textContent = `pages: ${pdfDoc.numPages}`;
 
-        const viewport = page.getViewport({ scale: 1.5 });
+    renderAllPages();
+});
+
+zoomSlider.addEventListener('input', () => {
+    scale = parseFloat(zoomSlider.value);
+    if (pdfDoc) renderAllPages();
+});
+
+async function renderAllPages() {
+    viewer.innerHTML = "";
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+
+        const viewport = page.getViewport({ scale });
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "page";
 
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
@@ -69,13 +132,21 @@ input.addEventListener('change', async (e) => {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        viewer.appendChild(canvas);
+        wrapper.style.width = Math.min(viewport.width, viewer.clientWidth - 40) + "px";
+
+        wrapper.appendChild(canvas);
+        viewer.appendChild(wrapper);
 
         await page.render({
             canvasContext: ctx,
             viewport: viewport
         }).promise;
     }
+}
+
+/* re-render on resize */
+window.addEventListener("resize", () => {
+    if (pdfDoc) renderAllPages();
 });
 </script>
 
