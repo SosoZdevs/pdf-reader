@@ -2,59 +2,122 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PDF Widget</title>
-
 <style>
+:root {
+    color-scheme: dark;
+    --bg: #0c0f16;
+    --panel: #141a23;
+    --border: #263141;
+    --text: #e7edf7;
+    --muted: #9fb0c6;
+    --accent: #76b7ff;
+    --accent-soft: rgba(118, 183, 255, 0.2);
+    --danger: #ff7b7b;
+}
+
 * {
     box-sizing: border-box;
 }
 
 body {
     margin: 0;
-    font-family: Inter, sans-serif;
-    background: #0f0f0f;
-    color: #fff;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: radial-gradient(circle at top, #131f33 0%, var(--bg) 35%);
+    color: var(--text);
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
 }
 
-/* top bar */
 #toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    background: rgba(10, 14, 22, 0.92);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+}
+
+.toolbar-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 15px;
-    background: rgba(20,20,20,0.9);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid #222;
+    flex-wrap: wrap;
 }
 
-input[type="file"] {
-    color: white;
+input[type="file"],
+input[type="url"],
+input[type="number"],
+button,
+select {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font: inherit;
+}
+
+input[type="url"] {
+    min-width: 280px;
+    flex: 1;
+}
+
+button {
+    cursor: pointer;
+    transition: transform .05s ease, border-color .2s ease, background .2s ease;
+}
+
+button:hover {
+    border-color: var(--accent);
+}
+
+button:active {
+    transform: translateY(1px);
+}
+
+button.primary {
+    background: linear-gradient(135deg, #2f6ee9, #2880ef);
+    border-color: transparent;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.spacer {
+    flex: 1;
 }
 
 #info {
-    margin-left: auto;
-    opacity: 0.7;
+    color: var(--muted);
+    white-space: nowrap;
 }
 
-/* viewer */
 #viewer {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
+    padding: 18px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px;
+    align-items: flex-start;
+    justify-content: center;
 }
 
-/* page */
+.reader-shell {
+    width: min(100%, 1100px);
+}
+
 .page {
-    background: white;
-    border-radius: 10px;
-    margin-bottom: 20px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    background: #fff;
+    border-radius: 12px;
+    margin: 0 auto 16px;
+    box-shadow: 0 14px 42px rgba(0,0,0,0.42);
     overflow: hidden;
     max-width: 100%;
 }
@@ -65,89 +128,398 @@ canvas {
     height: auto;
 }
 
-/* zoom slider */
-#zoom {
-    width: 120px;
+#status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+#status.error {
+    color: var(--danger);
+}
+
+#loading {
+    display: none;
+}
+
+.loading #loading {
+    display: inline-block;
+}
+
+kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #1f2937;
+    border: 1px solid #364152;
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 0.8rem;
+}
+
+@media (max-width: 760px) {
+    #toolbar {
+        padding: 10px;
+    }
+
+    input[type="url"] {
+        min-width: 100%;
+    }
 }
 </style>
 </head>
-
 <body>
 
 <div id="toolbar">
-    <input type="file" id="fileInput" accept="application/pdf">
+    <div class="toolbar-row">
+        <input type="file" id="fileInput" accept="application/pdf">
+        <input type="url" id="urlInput" placeholder="Or paste a PDF URL (https://...)" aria-label="PDF URL">
+        <button id="loadUrlBtn" class="primary">Load URL</button>
+        <div class="spacer"></div>
+        <div id="status"><span id="loading">⏳</span><span id="statusText">Ready</span></div>
+    </div>
 
-    <label>zoom</label>
-    <input type="range" id="zoom" min="0.5" max="2" step="0.1" value="1">
+    <div class="toolbar-row">
+        <button id="prevBtn" title="Previous page (←)">◀ Prev</button>
+        <label for="pageNumber">Page</label>
+        <input type="number" id="pageNumber" value="1" min="1" step="1" style="width:80px;">
+        <span id="pageCount">/ 0</span>
+        <button id="nextBtn" title="Next page (→)">Next ▶</button>
 
-    <div id="info">no pdf loaded</div>
+        <label for="zoom">Zoom</label>
+        <input type="range" id="zoom" min="0.5" max="3" step="0.1" value="1.1">
+        <span id="zoomLabel">110%</span>
+
+        <label for="mode">Mode</label>
+        <select id="mode">
+            <option value="single" selected>Single page reader</option>
+            <option value="continuous">Continuous scroll</option>
+        </select>
+
+        <button id="fitBtn" title="Fit to width">Fit Width</button>
+        <div class="spacer"></div>
+        <div id="info">No PDF loaded</div>
+    </div>
 </div>
 
-<div id="viewer"></div>
+<div id="viewer">
+    <div class="reader-shell" id="readerShell"></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
 <script>
-const input = document.getElementById('fileInput');
-const viewer = document.getElementById('viewer');
-const info = document.getElementById('info');
-const zoomSlider = document.getElementById('zoom');
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-let pdfDoc = null;
-let scale = 1;
+const state = {
+    pdfDoc: null,
+    scale: 1.1,
+    pageNumber: 1,
+    mode: 'single',
+    renderTask: null,
+    renderToken: 0,
+    sourceLabel: '',
+    renderTimer: null,
+    renderQueued: false,
+    updateTimer: null
+};
 
-input.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+const ui = {
+    fileInput: document.getElementById('fileInput'),
+    urlInput: document.getElementById('urlInput'),
+    loadUrlBtn: document.getElementById('loadUrlBtn'),
+    prevBtn: document.getElementById('prevBtn'),
+    nextBtn: document.getElementById('nextBtn'),
+    pageNumber: document.getElementById('pageNumber'),
+    pageCount: document.getElementById('pageCount'),
+    zoom: document.getElementById('zoom'),
+    zoomLabel: document.getElementById('zoomLabel'),
+    mode: document.getElementById('mode'),
+    fitBtn: document.getElementById('fitBtn'),
+    info: document.getElementById('info'),
+    status: document.getElementById('status'),
+    statusText: document.getElementById('statusText'),
+    readerShell: document.getElementById('readerShell')
+};
 
-    viewer.innerHTML = "loading...";
-    const buffer = await file.arrayBuffer();
+function setStatus(message, isError = false, isLoading = false) {
+    ui.statusText.textContent = message;
+    ui.status.classList.toggle('error', isError);
+    document.body.classList.toggle('loading', isLoading);
+}
 
-    pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
-
-    info.textContent = `pages: ${pdfDoc.numPages}`;
-
-    renderAllPages();
-});
-
-zoomSlider.addEventListener('input', () => {
-    scale = parseFloat(zoomSlider.value);
-    if (pdfDoc) renderAllPages();
-});
-
-async function renderAllPages() {
-    viewer.innerHTML = "";
-
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-
-        const viewport = page.getViewport({ scale });
-
-        const wrapper = document.createElement("div");
-        wrapper.className = "page";
-
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        wrapper.style.width = Math.min(viewport.width, viewer.clientWidth - 40) + "px";
-
-        wrapper.appendChild(canvas);
-        viewer.appendChild(wrapper);
-
-        await page.render({
-            canvasContext: ctx,
-            viewport: viewport
-        }).promise;
+function sanitizePdfUrl(value) {
+    if (!value) return null;
+    try {
+        const parsed = new URL(value, window.location.href);
+        if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+        return parsed.toString();
+    } catch {
+        return null;
     }
 }
 
-/* re-render on resize */
-window.addEventListener("resize", () => {
-    if (pdfDoc) renderAllPages();
+function getViewerWidth() {
+    return ui.readerShell.clientWidth || ui.readerShell.getBoundingClientRect().width;
+}
+
+function cancelCurrentRender() {
+    if (state.renderTask) {
+        state.renderTask.cancel();
+        state.renderTask = null;
+    }
+}
+
+function queueRender() {
+    if (!state.pdfDoc) return;
+    state.renderQueued = true;
+    if (state.renderTimer) clearTimeout(state.renderTimer);
+    state.renderTimer = setTimeout(() => {
+        state.renderTimer = null;
+        if (!state.renderQueued) return;
+        state.renderQueued = false;
+        render();
+    }, 90);
+}
+
+async function loadPdfFromSource(source, label = 'PDF') {
+    try {
+        setStatus('Loading PDF…', false, true);
+        cancelCurrentRender();
+        state.pdfDoc = await pdfjsLib.getDocument(source).promise;
+        state.pageNumber = 1;
+        state.sourceLabel = label;
+        ui.info.textContent = `${label} • ${state.pdfDoc.numPages} pages`;
+        ui.pageCount.textContent = `/ ${state.pdfDoc.numPages}`;
+        ui.pageNumber.max = String(state.pdfDoc.numPages);
+        syncControls();
+        await render();
+        setStatus('Loaded');
+        notifyElementWidget();
+    } catch (error) {
+        console.error(error);
+        setStatus(`Failed to load PDF: ${error?.message || 'unknown error'}`, true, false);
+        ui.info.textContent = 'No PDF loaded';
+        state.pdfDoc = null;
+        ui.readerShell.innerHTML = '';
+        syncControls();
+    } finally {
+        document.body.classList.remove('loading');
+    }
+}
+
+function syncControls() {
+    const hasPdf = !!state.pdfDoc;
+    ui.prevBtn.disabled = !hasPdf || state.pageNumber <= 1 || state.mode !== 'single';
+    ui.nextBtn.disabled = !hasPdf || state.pageNumber >= (state.pdfDoc?.numPages || 1) || state.mode !== 'single';
+    ui.pageNumber.disabled = !hasPdf || state.mode !== 'single';
+    ui.pageNumber.value = String(state.pageNumber);
+}
+
+function renderCanvas(page, canvas, viewport) {
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    canvas.width = Math.floor(viewport.width * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return page.render({ canvasContext: ctx, viewport });
+}
+
+async function renderSinglePage(token) {
+    const page = await state.pdfDoc.getPage(state.pageNumber);
+    const viewport = page.getViewport({ scale: state.scale });
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page';
+
+    const canvas = document.createElement('canvas');
+    wrapper.style.width = `${Math.min(viewport.width, getViewerWidth())}px`;
+    wrapper.appendChild(canvas);
+
+    ui.readerShell.innerHTML = '';
+    ui.readerShell.appendChild(wrapper);
+
+    state.renderTask = renderCanvas(page, canvas, viewport);
+    await state.renderTask.promise;
+    if (token !== state.renderToken) return;
+    state.renderTask = null;
+}
+
+async function renderContinuous(token) {
+    ui.readerShell.innerHTML = '';
+    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+        if (token !== state.renderToken) return;
+        const page = await state.pdfDoc.getPage(i);
+        const viewport = page.getViewport({ scale: state.scale });
+        const wrapper = document.createElement('div');
+        wrapper.className = 'page';
+        wrapper.style.width = `${Math.min(viewport.width, getViewerWidth())}px`;
+
+        const canvas = document.createElement('canvas');
+        wrapper.appendChild(canvas);
+        ui.readerShell.appendChild(wrapper);
+
+        state.renderTask = renderCanvas(page, canvas, viewport);
+        await state.renderTask.promise;
+        state.renderTask = null;
+    }
+}
+
+async function render() {
+    if (!state.pdfDoc) return;
+    cancelCurrentRender();
+    syncControls();
+    const token = ++state.renderToken;
+    setStatus('Rendering…', false, true);
+
+    try {
+        if (state.mode === 'single') {
+            await renderSinglePage(token);
+        } else {
+            await renderContinuous(token);
+        }
+        if (token === state.renderToken) {
+            setStatus('Rendered');
+            notifyElementWidget();
+        }
+    } catch (error) {
+        if (error?.name === 'RenderingCancelledException') return;
+        console.error(error);
+        setStatus(`Render error: ${error?.message || 'unknown error'}`, true, false);
+    } finally {
+        document.body.classList.remove('loading');
+    }
+}
+
+function updateFromParams() {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const searchParams = new URLSearchParams(window.location.search);
+    const explicitUrl = searchParams.get('pdf') || hashParams.get('pdf');
+    const params = explicitUrl ? new URLSearchParams(`pdf=${explicitUrl}`) : hashParams;
+    const pdfUrl = sanitizePdfUrl(params.get('pdf'));
+    if (pdfUrl) {
+        ui.urlInput.value = pdfUrl;
+        loadPdfFromSource(pdfUrl, 'Remote PDF');
+    }
+}
+
+function notifyElementWidget() {
+    if (window.self === window.top) return;
+    const payload = {
+        type: 'pdf-widget:update',
+        page: state.pageNumber,
+        totalPages: state.pdfDoc?.numPages || 0,
+        mode: state.mode,
+        zoom: state.scale,
+        height: document.body.scrollHeight
+    };
+    window.parent.postMessage(payload, '*');
+}
+
+function installElementAutoUpdateBridge() {
+    window.addEventListener('message', async (event) => {
+        const data = event.data || {};
+        if (data?.type === 'pdf-widget:set-pdf-url') {
+            const nextUrl = sanitizePdfUrl(data.url);
+            if (nextUrl) {
+                ui.urlInput.value = nextUrl;
+                await loadPdfFromSource(nextUrl, 'Element.io URL');
+            }
+        }
+        if (data?.type === 'pdf-widget:set-page' && state.pdfDoc) {
+            const p = Math.max(1, Math.min(state.pdfDoc.numPages, Number(data.page) || 1));
+            if (p !== state.pageNumber) {
+                state.pageNumber = p;
+                await render();
+            }
+        }
+    });
+
+    const observer = new ResizeObserver(() => notifyElementWidget());
+    observer.observe(document.body);
+    const mutationObserver = new MutationObserver(() => notifyElementWidget());
+    mutationObserver.observe(ui.readerShell, { childList: true, subtree: true });
+
+    state.updateTimer = setInterval(() => notifyElementWidget(), 4000);
+}
+
+ui.fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await loadPdfFromSource({ data: await file.arrayBuffer() }, file.name);
 });
+
+ui.loadUrlBtn.addEventListener('click', async () => {
+    const url = sanitizePdfUrl(ui.urlInput.value.trim());
+    if (!url) {
+        setStatus('Please provide a valid http(s) PDF URL.', true, false);
+        return;
+    }
+    await loadPdfFromSource(url, 'Remote PDF');
+    window.location.hash = `pdf=${encodeURIComponent(url)}`;
+});
+
+ui.prevBtn.addEventListener('click', async () => {
+    if (!state.pdfDoc || state.pageNumber <= 1) return;
+    state.pageNumber -= 1;
+    await render();
+});
+
+ui.nextBtn.addEventListener('click', async () => {
+    if (!state.pdfDoc || state.pageNumber >= state.pdfDoc.numPages) return;
+    state.pageNumber += 1;
+    await render();
+});
+
+ui.pageNumber.addEventListener('change', async () => {
+    if (!state.pdfDoc) return;
+    const p = Math.max(1, Math.min(state.pdfDoc.numPages, Number(ui.pageNumber.value) || 1));
+    state.pageNumber = p;
+    await render();
+});
+
+ui.zoom.addEventListener('input', async () => {
+    state.scale = Number(ui.zoom.value);
+    ui.zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
+    queueRender();
+});
+
+ui.mode.addEventListener('change', async () => {
+    state.mode = ui.mode.value;
+    syncControls();
+    await render();
+});
+
+ui.fitBtn.addEventListener('click', async () => {
+    if (!state.pdfDoc) return;
+    const page = await state.pdfDoc.getPage(state.pageNumber);
+    const unscaled = page.getViewport({ scale: 1 });
+    state.scale = Math.max(0.5, Math.min(3, (getViewerWidth() - 4) / unscaled.width));
+    ui.zoom.value = String(state.scale);
+    ui.zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
+    await render();
+});
+
+window.addEventListener('resize', () => {
+    if (state.pdfDoc) queueRender();
+});
+
+window.addEventListener('keydown', async (event) => {
+    if (!state.pdfDoc || state.mode !== 'single') return;
+    if (event.key === 'ArrowRight' && state.pageNumber < state.pdfDoc.numPages) {
+        state.pageNumber += 1;
+        await render();
+    }
+    if (event.key === 'ArrowLeft' && state.pageNumber > 1) {
+        state.pageNumber -= 1;
+        await render();
+    }
+});
+
+setStatus('Ready • Tip: use ← and → to flip pages');
+syncControls();
+updateFromParams();
+installElementAutoUpdateBridge();
 </script>
 
 </body>
